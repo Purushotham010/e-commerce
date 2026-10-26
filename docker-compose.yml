@@ -1,0 +1,74 @@
+services:
+  # ==========================================
+  # Database Service: PostgreSQL (PRIVATE)
+  # Port 5432 is strictly internal to ecommerce-net.
+  # No external host port is mapped for security.
+  # ==========================================
+  db:
+    image: postgres:15-alpine
+    container_name: ecommerce_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-ecommerce_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-secure_ec2_password}
+      POSTGRES_DB: ${POSTGRES_DB:-ecommerce_db}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - ecommerce-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ecommerce_user} -d ${POSTGRES_DB:-ecommerce_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ==========================================
+  # Backend Service: FastAPI (PRIVATE)
+  # Port 8000 is accessible only by the frontend
+  # container via Nginx reverse proxy.
+  # ==========================================
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: ecommerce_backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-ecommerce_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-secure_ec2_password}
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-ecommerce_db}
+    networks:
+      - ecommerce-net
+
+  # ==========================================
+  # Frontend & Ingress: React + Nginx (PUBLIC)
+  # Port 80 is the ONLY port published to the public.
+  # Nginx serves React and reverse-proxies /api to backend:8000.
+  # ==========================================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: ecommerce_frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    networks:
+      - ecommerce-net
+
+# Dedicated bridge network for service isolation
+networks:
+  ecommerce-net:
+    driver: bridge
+
+# Persistent volume for PostgreSQL database
+volumes:
+  pgdata:
+    driver: local
