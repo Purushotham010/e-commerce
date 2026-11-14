@@ -152,3 +152,84 @@ In your web browser:
 http://<YOUR-EC2-PUBLIC-IP>/
 ```
 All features (catalog, cart, checkout, PostgreSQL order records) work seamlessly under the single public port 80.
+
+
+---
+
+## 6. Project Flow & Architecture Summary
+
+As submitted in the course tracking sheet, the complete end-to-end data and traffic flow is structured as:
+
+```text
+User → React (Vite) Frontend → Nginx Reverse Proxy (Port 8080) → FastAPI REST API (Port 8000) → PostgreSQL 15 Database (Port 5432) → Persistent Docker Volume (pgdata)
+```
+
+### Flow Breakdown:
+1. **User Ingress:** Client requests enter through public **Port 8080** (or Port 80) managed by Nginx.
+2. **Reverse Proxy Routing:** Nginx serves the compiled React application and transparently reverse-proxies `/api/*` routes to the private FastAPI backend on port `8000`.
+3. **Database Access:** FastAPI queries PostgreSQL over the private Docker/Kubernetes network on port `5432`.
+4. **Data Persistence:** Database files are stored on a persistent volume (`pgdata`) so that inventory counts and order records survive container restarts.
+
+---
+
+## 7. Docker Hub Image Distribution Pipeline
+
+All microservices are packaged and published to the public Docker Hub registry for cloud-native deployment:
+
+* **Frontend Image:** `docker.io/purushotham010/ecommerce-frontend:v1.0`
+* **Backend Image:** `docker.io/purushotham010/ecommerce-backend:v1.0`
+
+### Pushing to Docker Hub:
+```bash
+# 1. Login to Docker Hub
+docker login
+
+# 2. Tag local images
+docker tag project_3_ecommerce-frontend:latest purushotham010/ecommerce-frontend:v1.0
+docker tag project_3_ecommerce-backend:latest purushotham010/ecommerce-backend:v1.0
+
+# 3. Push to registry
+docker push purushotham010/ecommerce-frontend:v1.0
+docker push purushotham010/ecommerce-backend:v1.0
+```
+
+---
+
+## 8. Kubernetes Cluster Orchestration (`k8s/`)
+
+The application is fully configured for Kubernetes orchestration using declarative YAML manifests in the `k8s/` directory:
+
+```
+k8s/
+├── postgres.yaml    # PostgreSQL 15 Deployment, PersistentVolumeClaim (1Gi), and ClusterIP Service
+├── backend.yaml     # FastAPI REST API Deployment (2 Replicas for HA) and ClusterIP Service
+└── frontend.yaml    # React + Nginx Deployment (2 Replicas) and NodePort Service (Port 30081)
+```
+
+### Key Kubernetes Features Implemented:
+* **High Availability (HA):** Both frontend and backend deployments run with **2 replicas** for automatic load balancing.
+* **Service Discovery:** Backend and PostgreSQL are exposed exclusively via internal `ClusterIP` services (`backend:8000` and `db:5432`), keeping them completely private within the cluster.
+* **Data Persistence:** PostgreSQL uses a `PersistentVolumeClaim` (`postgres-pvc`) to prevent data loss across pod restarts.
+* **Self-Healing:** If any pod crashes or is terminated, Kubernetes automatically detects the failure and spins up a healthy replacement pod in seconds.
+
+### Deploying to Kubernetes:
+```bash
+# 1. Apply all manifests
+kubectl apply -f k8s/
+
+# 2. Verify all pods and services are running
+kubectl get pods,svc,pvc
+
+# 3. Forward port 8081 to test locally
+kubectl port-forward svc/frontend 8081:80
+```
+Open **`http://localhost:8081/`** to view the application running live on Kubernetes!
+
+### Self-Healing Verification (Simulate a Crash):
+```bash
+# Delete any active backend pod
+kubectl delete pod <backend-pod-name>
+
+# Verify immediate autonomous recovery
+kubectl get pods
+```

@@ -1,0 +1,14 @@
+# Local Deployment Guides
+KUBERNETES_DEPLOYMENT_GUIDE.md
+
+# Dependencies & Build
+node_modules/
+dist/
+__pycache__/
+*.pyc
+
+# Environment & OS
+.env
+.DS_Store
+*.log
+
